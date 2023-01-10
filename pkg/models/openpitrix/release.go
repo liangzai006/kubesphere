@@ -21,10 +21,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/blang/semver/v4"
+	"k8s.io/client-go/kubernetes"
+	"kubesphere.io/kubesphere/pkg/apiserver/query"
 	"sort"
 	"strings"
-
-	"kubesphere.io/kubesphere/pkg/apiserver/query"
 
 	"github.com/go-openapi/strfmt"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -68,9 +69,10 @@ type releaseOperator struct {
 	appVersionLister listers_v1alpha1.HelmApplicationVersionLister
 	cachedRepos      reposcache.ReposCache
 	clusterClients   clusterclient.ClusterClients
+	k8sClient        kubernetes.Interface
 }
 
-func newReleaseOperator(cached reposcache.ReposCache, k8sFactory informers.SharedInformerFactory, ksFactory externalversions.SharedInformerFactory, ksClient versioned.Interface, cc clusterclient.ClusterClients) ReleaseInterface {
+func newReleaseOperator(cached reposcache.ReposCache, k8sFactory informers.SharedInformerFactory, ksFactory externalversions.SharedInformerFactory, ksClient versioned.Interface, cc clusterclient.ClusterClients, k8sClient kubernetes.Interface) ReleaseInterface {
 	c := &releaseOperator{
 		informers:        k8sFactory,
 		rlsClient:        ksClient.ApplicationV1alpha1().HelmReleases(),
@@ -78,6 +80,7 @@ func newReleaseOperator(cached reposcache.ReposCache, k8sFactory informers.Share
 		cachedRepos:      cached,
 		clusterClients:   cc,
 		appVersionLister: ksFactory.Application().V1alpha1().HelmApplicationVersions().Lister(),
+		k8sClient:        k8sClient,
 	}
 
 	return c
@@ -160,6 +163,22 @@ func (c *releaseOperator) CreateApplication(workspace, clusterName, namespace st
 	if exists {
 		err = fmt.Errorf("release %s exists", request.Name)
 		klog.Error(err)
+		return err
+	}
+
+	serverVersion, err := c.k8sClient.Discovery().ServerVersion()
+	parseServerVersion, err := semver.ParseTolerant(serverVersion.GitVersion)
+	parseAppVersion, err := semver.ParseTolerant(version.Spec.KubeVersion)
+	ge := parseServerVersion.GE(semver.Version{
+		Major: parseAppVersion.Major,
+		Minor: parseAppVersion.Minor,
+		Patch: parseAppVersion.Patch,
+		Pre:   parseAppVersion.Pre,
+		Build: parseAppVersion.Build,
+	})
+	if !ge {
+		err = fmt.Errorf("the cluster version is lower than the required version of the application. serverVersion:%s;appVersion:%s", serverVersion.GitVersion, version.Spec.KubeVersion)
+		klog.Errorln(err)
 		return err
 	}
 

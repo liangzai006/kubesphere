@@ -222,7 +222,7 @@ func (s *ServerRunOptions) NewAPIServer(stopCh <-chan struct{}) (*apiserver.APIS
 		apiServer.ClusterClient = cc
 	}
 
-	apiServer.OpenpitrixClient = openpitrixv1.NewOpenpitrixClient(informerFactory, apiServer.KubernetesClient.KubeSphere(), s.OpenPitrixOptions, apiServer.ClusterClient)
+	apiServer.OpenpitrixClient = openpitrixv1.NewOpenpitrixClient(informerFactory, apiServer.KubernetesClient.KubeSphere(), s.OpenPitrixOptions, apiServer.ClusterClient, apiServer.KubernetesClient.Kubernetes())
 
 	server := &http.Server{
 		Addr: fmt.Sprintf(":%d", s.GenericServerRunOptions.InsecurePort),
